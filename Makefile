@@ -1,3 +1,4 @@
+SHELL := /bin/bash
 # Atajos para el flujo desde cero. Lee la configuración de .env (copiar de .env.example).
 # Los comandos que tocan GCP o GitHub se ejecutan con TUS credenciales (gcloud/gh).
 -include .env
