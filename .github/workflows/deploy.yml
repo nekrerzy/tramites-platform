@@ -1,0 +1,105 @@
+# Despliegue continuo: cada merge a main que toca app/ construye la imagen, la publica con
+# versión SemVer + SHA, firma su digest para Binary Authorization y la despliega en Cloud Run
+# por digest. Autenticación con Workload Identity Federation (sin llaves JSON); la cuenta
+# gha-deployer solo puede ser usada por ESTE workflow en main (ver service_accounts.tf).
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # token OIDC para WIF
+
+# Nunca dos despliegues a la vez; el segundo espera (no se cancela a medias).
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION }}
+  SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.5"
+
+      - name: Pruebas (última barrera antes de publicar)
+        working-directory: app
+        run: |
+          uv sync --frozen
+          uv run pytest -q
+
+      - name: Calcular versión e imagen
+        id: meta
+        run: |
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("app/pyproject.toml","rb"))["project"]["version"])')"
+          # SemVer de pyproject.toml + SHA corto: única por commit (las etiquetas son inmutables).
+          tag="${version}-${GITHUB_SHA::7}"
+          image="${REGION}-docker.pkg.dev/${PROJECT_ID}/${{ vars.AR_REPOSITORY }}/tramites-api"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+          echo "Imagen: ${image}:${tag}"
+
+      - id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          version: "588.0.0"
+          install_components: beta
+
+      - name: Construir y publicar imagen
+        id: image
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker build --build-arg "APP_VERSION=${TAG}" -t "${IMAGE}:${TAG}" app
+          docker push "${IMAGE}:${TAG}"
+          # De aquí en adelante solo se usa el digest: lo que se firma es lo que se despliega.
+          digest_ref="$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE}:${TAG}")"
+          echo "ref=${digest_ref}" >> "$GITHUB_OUTPUT"
+          echo "Digest: ${digest_ref}"
+
+      - name: Firmar digest (atestación de Binary Authorization)
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
+        run: |
+          gcloud beta container binauthz attestations sign-and-create \
+            --artifact-url="${IMAGE_REF}" \
+            --attestor="${{ vars.BINAUTHZ_ATTESTOR }}" \
+            --keyversion="${{ vars.KMS_KEY_VERSION }}"
+
+      - name: Desplegar en Cloud Run por digest
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
+        run: |
+          gcloud run deploy "${SERVICE}" \
+            --image="${IMAGE_REF}" \
+            --region="${REGION}" \
+            --quiet
+
+      - name: Smoke test de /health
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          url="$(gcloud run services describe "${SERVICE}" --region="${REGION}" --format='value(status.url)')"
+          curl -fsS --retry 5 --retry-delay 3 --retry-all-errors "${url}/health" | tee health.json
+          grep -q "\"version\":\"${TAG}\"" health.json
