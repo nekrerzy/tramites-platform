@@ -88,7 +88,9 @@ resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
   member   = "allUsers"
 }
 
-# El pipeline puede desplegar nuevas revisiones de ESTE servicio, no de otros.
+# El pipeline puede desplegar nuevas revisiones de ESTE servicio, no de otros. Según la doc de
+# Cloud Run basta con esto + serviceAccountUser sobre runtime + lectura del repo de AR
+# (writer la incluye); no hace falta run.viewer a nivel proyecto.
 resource "google_cloud_run_v2_service_iam_member" "deployer_developer" {
   name     = google_cloud_run_v2_service.api.name
   location = google_cloud_run_v2_service.api.location

@@ -97,10 +97,11 @@ resource "google_kms_crypto_key_iam_member" "deployer_signer" {
   member        = google_service_account.deployer.member
 }
 
-# ...lee el attestor...
-resource "google_binary_authorization_attestor_iam_member" "deployer_viewer" {
+# ...lee el attestor y verifica su propia atestación (`sign-and-create --validate`).
+# attestorsVerifier = attestorsViewer + verifyImageAttested, solo sobre este attestor.
+resource "google_binary_authorization_attestor_iam_member" "deployer_verifier" {
   attestor = google_binary_authorization_attestor.pipeline.name
-  role     = "roles/binaryauthorization.attestorsViewer"
+  role     = "roles/binaryauthorization.attestorsVerifier"
   member   = google_service_account.deployer.member
 }
 
