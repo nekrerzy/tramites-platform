@@ -30,12 +30,15 @@ resource "google_kms_crypto_key" "attestor" {
   destroy_scheduled_duration = "86400s"
 }
 
+# Una llave nueva siempre nace con la versión 1. Fijarla aquí evita que el plan falle: antes de
+# crear la llave, el data source no conoce todavía su número de versión (null).
 data "google_kms_crypto_key_version" "attestor" {
   crypto_key = google_kms_crypto_key.attestor.id
+  version    = 1
 }
 
 locals {
-  kms_key_version = "${google_kms_crypto_key.attestor.id}/cryptoKeyVersions/${data.google_kms_crypto_key_version.attestor.version}"
+  kms_key_version = "${google_kms_crypto_key.attestor.id}/cryptoKeyVersions/1"
 }
 
 # El attestor guarda sus atestaciones como "occurrences" de esta nota de Artifact Analysis.
