@@ -85,7 +85,8 @@ jobs:
           gcloud beta container binauthz attestations sign-and-create \
             --artifact-url="${IMAGE_REF}" \
             --attestor="${{ vars.BINAUTHZ_ATTESTOR }}" \
-            --keyversion="${{ vars.KMS_KEY_VERSION }}"
+            --keyversion="${{ vars.KMS_KEY_VERSION }}" \
+            --validate # falla aquí si la firma no verifica contra el attestor
 
       - name: Desplegar en Cloud Run por digest
         env:
