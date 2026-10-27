@@ -1,3 +1,14 @@
+# IAM es eventualmente consistente: el permiso de la cuenta runtime sobre el secreto puede
+# tardar en verse. Cloud Run valida ese acceso al crear la revisión, así que sin esta espera el
+# primer apply puede fallar con "permission denied" en el secreto.
+resource "time_sleep" "runtime_secret_access" {
+  create_duration = "60s"
+
+  triggers = {
+    secret_binding = google_secret_manager_secret_iam_member.runtime_accessor.id
+  }
+}
+
 resource "google_cloud_run_v2_service" "api" {
   name     = var.service_name
   location = var.region
@@ -50,6 +61,13 @@ resource "google_cloud_run_v2_service" "api" {
     }
   }
 
+  # La espera de IAM y la política de Binary Authorization deben existir antes de la primera
+  # revisión (use_default = true aplica la política del proyecto).
+  depends_on = [
+    time_sleep.runtime_secret_access,
+    google_binary_authorization_policy.policy,
+  ]
+
   lifecycle {
     # La imagen la despliega el pipeline (por digest); Terraform maneja todo lo demás.
     # Sin esto, cada despliegue aparecería como drift. client/client_version los escribe gcloud.
@@ -59,11 +77,6 @@ resource "google_cloud_run_v2_service" "api" {
       client_version,
     ]
   }
-
-  depends_on = [
-    google_secret_manager_secret_iam_member.runtime_accessor,
-    google_binary_authorization_policy.policy,
-  ]
 }
 
 # Acceso público (decisión explícita): los ciudadanos consultan sin cuenta de Google. El

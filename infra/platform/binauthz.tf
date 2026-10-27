@@ -80,9 +80,11 @@ resource "google_binary_authorization_policy" "policy" {
   }
 
   default_admission_rule {
-    evaluation_mode         = "REQUIRE_ATTESTATION"
-    enforcement_mode        = "ENFORCED_BLOCK_AND_AUDIT_LOG"
-    require_attestations_by = [google_binary_authorization_attestor.pipeline.id]
+    evaluation_mode  = "REQUIRE_ATTESTATION"
+    enforcement_mode = "ENFORCED_BLOCK_AND_AUDIT_LOG"
+    # ID armado con valores conocidos en el plan: con `.id` del attestor (desconocido hasta crearlo)
+    # el provider de google produce un "inconsistent final plan" en el primer apply.
+    require_attestations_by = ["projects/${var.project_id}/attestors/${google_binary_authorization_attestor.pipeline.name}"]
   }
 }
 
