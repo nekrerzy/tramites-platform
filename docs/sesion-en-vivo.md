@@ -96,8 +96,8 @@ imagen: lo maneja el pipeline (`ignore_changes`).
 
 - `deploy.yml` falla en `auth`: revisar variables (`gh variable list --repo $REPO`) y que el
   workflow corra en `main` (el binding WIF exige `deploy.yml@refs/heads/main`).
-- `make platform` falla al crear Cloud Run con "permission denied" sobre el secreto: es la
-  propagación de IAM (el binding `secretAccessor` se acaba de crear). Repetir `make platform`.
+- Primer `make platform`: espera ~60 s (`time_sleep.runtime_secret_access`) para que IAM propague
+  el permiso `secretAccessor` antes de crear Cloud Run; sin esa espera fallaba con "permission denied".
 - `gcloud run deploy` del pipeline sin permiso: `gha-deployer` tiene lo que pide la doc de
   Cloud Run (`run.developer` sobre el servicio, `serviceAccountUser` sobre `tramites-runtime`,
   lectura del repo de AR). Revisar esos bindings y que el servicio no se haya recreado.
