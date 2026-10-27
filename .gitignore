@@ -1,8 +1,20 @@
+# Secretos y configuración local: NUNCA se versionan.
 .env
+*.json.key
+*-key.json
+gha-creds-*.json
+*.tfvars
+!*.tfvars.example
+
+# Terraform
 *.tfstate
 *.tfstate.*
 .terraform/
 *.tfplan
+crash.log
+
+# Python
 __pycache__/
 .venv/
-*.json.key
+.pytest_cache/
+.ruff_cache/
