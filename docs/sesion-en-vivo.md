@@ -96,8 +96,12 @@ imagen: lo maneja el pipeline (`ignore_changes`).
 
 - `deploy.yml` falla en `auth`: revisar variables (`gh variable list --repo $REPO`) y que el
   workflow corra en `main` (el binding WIF exige `deploy.yml@refs/heads/main`).
-- `gcloud run deploy` del pipeline sin permiso: revisar los roles de `gha-deployer` en la
-  tabla de IAM; si pide `run.operations.get`/`run.revisions.get`, agregar `roles/run.viewer`
-  a nivel proyecto en `service_accounts.tf` (PR + `make platform`).
+- `make platform` falla al crear Cloud Run con "permission denied" sobre el secreto: es la
+  propagación de IAM (el binding `secretAccessor` se acaba de crear). Repetir `make platform`.
+- `gcloud run deploy` del pipeline sin permiso: `gha-deployer` tiene lo que pide la doc de
+  Cloud Run (`run.developer` sobre el servicio, `serviceAccountUser` sobre `tramites-runtime`,
+  lectura del repo de AR). Revisar esos bindings y que el servicio no se haya recreado.
+- `sign-and-create --validate` falla: revisar `attestorsVerifier` sobre el attestor y
+  `signerVerifier` sobre la llave (`gcloud container binauthz attestors get-iam-policy pipeline-attestor`).
 - Emergencia con Binary Authorization: despliegue con `--breakglass "justificación"` (queda
   en audit logs).

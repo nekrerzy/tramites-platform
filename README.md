@@ -103,6 +103,8 @@ make platform-init        # conecta con el bucket <PROJECT_ID>-tfstate
 make platform-secret      # crea el secreto (sin valor)
 make secret-version       # pide el valor de API_KEY y lo agrega como versión
 make platform             # Cloud Run (imagen placeholder), AR, KMS, BinAuthz, IAM
+#   Si la primera vez falla creando Cloud Run con "permission denied" sobre el secreto, es la
+#   propagación de IAM (el permiso secretAccessor se crea segundos antes): repetir `make platform`.
 make github-vars          # carga GCP_* y demás variables en GitHub Actions
 
 # 4. Fusionar DEVOPS-05 (deploy.yml): el merge dispara el primer despliegue real.
