@@ -49,6 +49,8 @@ resource "google_project_iam_member" "drift_readonly" {
     "roles/viewer",
     # Lectura de políticas IAM de cada recurso (los *_iam_member de este stack).
     "roles/iam.securityReviewer",
+    # Permiso para cobrar la cuota al proyecto (user_project_override en versions.tf).
+    "roles/serviceusage.serviceUsageConsumer",
   ])
 
   project = var.project_id
