@@ -1,0 +1,7 @@
+# Copiar a terraform.tfvars (ignorado por git) o usar `make bootstrap` con .env.
+project_id         = "mi-proyecto-gcp"
+region             = "us-central1"
+billing_account_id = "XXXXXX-XXXXXX-XXXXXX"
+budget_currency    = "USD"
+budget_amount      = 10
+github_repo        = "mi-usuario/tramites-platform"
