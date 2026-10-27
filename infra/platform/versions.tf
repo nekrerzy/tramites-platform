@@ -13,6 +13,11 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 8.8"
     }
+    # Sufijo aleatorio del key ring de KMS (los key rings no se pueden borrar en GCP).
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.7"
+    }
   }
 }
 

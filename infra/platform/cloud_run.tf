@@ -6,6 +6,12 @@ resource "google_cloud_run_v2_service" "api" {
   # Sin protección: la prueba exige que todo se pueda destruir con `terraform destroy`.
   deletion_protection = false
 
+  # Aplica la política de Binary Authorization del proyecto (binauthz.tf): solo corren
+  # imágenes atestiguadas por el pipeline.
+  binary_authorization {
+    use_default = true
+  }
+
   template {
     service_account = google_service_account.runtime.email
 
@@ -54,7 +60,10 @@ resource "google_cloud_run_v2_service" "api" {
     ]
   }
 
-  depends_on = [google_secret_manager_secret_iam_member.runtime_accessor]
+  depends_on = [
+    google_secret_manager_secret_iam_member.runtime_accessor,
+    google_binary_authorization_policy.policy,
+  ]
 }
 
 # Acceso público (decisión explícita): los ciudadanos consultan sin cuenta de Google. El
