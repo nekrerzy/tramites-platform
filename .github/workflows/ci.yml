@@ -32,13 +32,24 @@ jobs:
       - run: uv run pytest -q
 
   docker:
-    name: docker build (non-root)
+    name: docker build (non-root + vulnerabilidades)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: docker build -t tramites-api:ci app
       - name: La imagen no corre como root
         run: test "$(docker run --rm tramites-api:ci id -u)" != "0"
+      # Escanea la misma imagen (paquetes del SO y dependencias Python). Falla solo con HIGH o
+      # CRITICAL que ya tienen parche: lo que no se puede arreglar no bloquea el PR.
+      # Trivy fue comprometido en mar-2026 (v0.69.4-0.69.6): se fija por digest una versión
+      # posterior y corre aislado, sin socket de Docker y en un job sin credenciales.
+      - name: Escaneo de vulnerabilidades (Trivy)
+        run: |
+          docker save tramites-api:ci -o image.tar
+          docker run --rm -v "${PWD}/image.tar:/scan/image.tar:ro" \
+            aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222 \
+            image --input /scan/image.tar --severity HIGH,CRITICAL --ignore-unfixed \
+            --exit-code 1 --no-progress
 
   terraform:
     name: terraform fmt + validate
