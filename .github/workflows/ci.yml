@@ -41,8 +41,32 @@ jobs:
       - name: La imagen no corre como root
         run: test "$(docker run --rm tramites-api:ci id -u)" != "0"
 
+  changes:
+    name: detectar cambios de terraform
+    runs-on: ubuntu-24.04
+    outputs:
+      terraform: ${{ steps.diff.outputs.terraform }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # necesita la base y la punta para comparar
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        # git diff --quiet: 0 = sin cambios, 1 = hay cambios, >1 = error (base desconocida).
+        # Ante error se valida igual: saltarse el check solo cuando es seguro.
+        run: |
+          if git diff --quiet "${BASE}...${HEAD}" -- infra .github/workflows/ci.yml; then
+            echo "terraform=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "terraform=true" >> "$GITHUB_OUTPUT"
+          fi
+
   terraform:
     name: terraform fmt + validate
+    needs: changes
+    if: needs.changes.outputs.terraform == 'true'
     runs-on: ubuntu-24.04
     strategy:
       matrix:
