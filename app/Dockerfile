@@ -21,8 +21,10 @@ ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION} \
     PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1
-# Usuario sin privilegios con UID fijo.
-RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app
+# Usuario sin privilegios con UID fijo. pip no se usa en runtime (las dependencias vienen del
+# .venv que arma uv) y trae dependencias propias con vulnerabilidades: se quita de la imagen.
+RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app \
+    && python -m pip uninstall --yes --no-cache-dir pip
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
 COPY tramites_api ./tramites_api

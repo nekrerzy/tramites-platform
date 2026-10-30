@@ -18,3 +18,5 @@ __pycache__/
 .venv/
 .pytest_cache/
 .ruff_cache/
+# Backend local temporal del primer apply y del destroy (terraform/README.md).
+*_override.tf

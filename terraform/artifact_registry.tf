@@ -26,6 +26,8 @@ resource "google_artifact_registry_repository" "app" {
       older_than = "1209600s" # 14 días
     }
   }
+
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_artifact_registry_repository_iam_member" "deployer_writer" {
