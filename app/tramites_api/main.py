@@ -58,7 +58,7 @@ def health() -> dict[str, str]:
 
 @app.get("/hello")
 def hello():
-    return {"hello": "back"}
+    return {"hello": "new branch"}
 
 
 @app.get("/tramites/{numero}", dependencies=[Depends(require_api_key)])
