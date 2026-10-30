@@ -1,16 +1,18 @@
-# Despliegue continuo: corre cuando ci.yml termina en verde sobre un push a main (CI -> CD).
-# Construye la imagen del commit que ci probó, la publica con versión SemVer + SHA y la
-# despliega en Cloud Run por digest. Autenticación con
-# Workload Identity Federation (sin llaves JSON); la cuenta gha-deployer solo puede ser usada
-# por ESTE workflow en main (ver service_accounts.tf). workflow_run siempre corre la versión
-# de este archivo en main, así que el claim workflow_ref sigue siendo deploy.yml@refs/heads/main.
+# CD: cada merge a main que cambia la app construye la imagen, la publica con versión
+# SemVer + SHA y la despliega en Cloud Run por digest. No repite las pruebas: ci.yml ya las
+# corrió en el PR y la protección de main no deja fusionar sin ellas.
+# Autenticación con Workload Identity Federation (sin llaves JSON): la cuenta gha-deployer
+# solo la puede usar ESTE archivo en main (terraform/service_accounts.tf).
 name: deploy
 
 on:
-  workflow_run:
-    workflows: [ci]
-    types: [completed]
+  push:
     branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/deploy.yml"
+  # Redesplegar sin cambiar código, p. ej. tras rotar la API key (Cloud Run lee el secreto
+  # al crear cada revisión).
   workflow_dispatch:
 
 permissions:
@@ -26,37 +28,25 @@ env:
   PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
   REGION: ${{ vars.GCP_REGION }}
   SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
-  # El commit que ci probó (no el último de main, que pudo avanzar mientras ci corría).
-  DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   deploy:
-    # Solo ci en verde de un push a este mismo repo: nunca de un PR (ni de un fork con una
-    # rama llamada main), y nunca si ci falló o se canceló.
-    if: >-
-      github.event_name == 'workflow_dispatch' || (
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ env.DEPLOY_SHA }}
 
       - name: Calcular versión e imagen
         id: meta
         run: |
           version="$(python3 -c 'import tomllib; print(tomllib.load(open("app/pyproject.toml","rb"))["project"]["version"])')"
           # SemVer de pyproject.toml + SHA corto: única por commit (las etiquetas son inmutables).
-          tag="${version}-${DEPLOY_SHA::7}"
+          tag="${version}-${GITHUB_SHA::7}"
           image="${REGION}-docker.pkg.dev/${PROJECT_ID}/${{ vars.AR_REPOSITORY }}/tramites-api"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "image=${image}" >> "$GITHUB_OUTPUT"
           echo "Imagen: ${image}:${tag}"
 
-      - id: auth
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOYER_SA }}
