@@ -1,4 +1,4 @@
-# Copiar a terraform.tfvars (ignorado por git) o usar `make` con .env.
+# Copiar a terraform.tfvars (ignorado por git).
 project_id         = "mi-proyecto-gcp"
 region             = "us-central1"
 github_repo        = "mi-usuario/tramites-platform"

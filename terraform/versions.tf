@@ -1,6 +1,6 @@
 # Un solo stack y un solo state, remoto en el bucket que crea este mismo código (state.tf).
-# El primer apply corre con state local y `make bootstrap` lo sube al bucket; `make destroy`
-# lo baja a local antes de destruir. El bucket se pasa en
+# El primer apply corre con state local y luego se sube al bucket; para destruir se baja a
+# local primero (ver README.md). El bucket se pasa en
 # `terraform init -backend-config="bucket=<proyecto>-tfstate"` para no fijar un ID de proyecto
 # en el repositorio.
 terraform {

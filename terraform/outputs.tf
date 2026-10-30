@@ -7,8 +7,8 @@ output "image_repository" {
   value       = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.app.repository_id}"
 }
 
-# Variables de GitHub Actions (no son secretos: son nombres de recursos). `make github-vars`
-# las carga con `gh variable set`.
+# Variables de GitHub Actions (no son secretos: son nombres de recursos). README.md
+# muestra cómo cargarlas con `gh variable set`.
 output "github_variables" {
   value = {
     GCP_PROJECT_ID    = var.project_id
