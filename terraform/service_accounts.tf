@@ -6,11 +6,15 @@
 resource "google_service_account" "runtime" {
   account_id   = "tramites-runtime"
   display_name = "Cloud Run tramites-api (runtime)"
+
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_service_account" "deployer" {
   account_id   = "gha-deployer"
   display_name = "GitHub Actions: deploy.yml"
+
+  depends_on = [google_project_service.apis]
 }
 
 # --- Workload Identity Federation: solo deploy.yml en main puede usar la cuenta deployer ---

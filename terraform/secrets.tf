@@ -7,6 +7,8 @@ resource "google_secret_manager_secret" "api_key" {
   replication {
     auto {}
   }
+
+  depends_on = [google_project_service.apis]
 }
 
 # Solo la cuenta runtime puede leer este secreto (y ningún otro).

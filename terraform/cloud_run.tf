@@ -56,7 +56,7 @@ resource "google_cloud_run_v2_service" "api" {
   }
 
   # La espera de IAM debe terminar antes de la primera revisión.
-  depends_on = [time_sleep.runtime_secret_access]
+  depends_on = [google_project_service.apis, time_sleep.runtime_secret_access]
 
   lifecycle {
     # La imagen la despliega el pipeline (por digest); Terraform maneja todo lo demás.
