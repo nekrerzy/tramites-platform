@@ -44,11 +44,15 @@ validate: ## terraform validate (sin backend)
 # --- Desde cero en GCP (en este orden) ---
 
 bootstrap: ## 1. APIs, bucket del state y secreto (sin valor); al final sube el state al bucket
+	@! gcloud storage buckets describe gs://$(BUCKET) >/dev/null 2>&1 || \
+		{ echo "El bucket $(BUCKET) ya existe: usa 'make init' en lugar de bootstrap."; exit 1; }
 	printf 'terraform {\n  backend "local" {}\n}\n' > $(LOCAL_BACKEND)
 	$(TF) init -input=false -reconfigure
 	$(TF) apply $(VARS) -target=google_storage_bucket.tfstate -target=google_secret_manager_secret.api_key
 	rm $(LOCAL_BACKEND)
 	$(TF) init -input=false -migrate-state -force-copy -backend-config="bucket=$(BUCKET)"
+	@# La copia local ya está en el bucket; si se queda, un bootstrap futuro la subiría encima.
+	rm -f terraform/terraform.tfstate terraform/terraform.tfstate.backup
 
 init: ## Conecta con el state remoto (en un clon nuevo, después de bootstrap)
 	$(TF) init -input=false -reconfigure -backend-config="bucket=$(BUCKET)"
@@ -68,5 +72,8 @@ github-vars: ## 4. Carga las variables de GitHub Actions con gh
 destroy: ## Destruye todo: baja el state a local (el bucket también se borra) y destruye
 	printf 'terraform {\n  backend "local" {}\n}\n' > $(LOCAL_BACKEND)
 	$(TF) init -input=false -migrate-state -force-copy
+	@# En un clon sin `make init` no hay nada que migrar: no reportar un destroy vacío como éxito.
+	@$(TF) state list | grep -q . || \
+		{ rm $(LOCAL_BACKEND); echo "State vacío: corre 'make init' primero."; exit 1; }
 	$(TF) destroy $(VARS)
 	rm $(LOCAL_BACKEND)
