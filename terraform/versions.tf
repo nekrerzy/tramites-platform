@@ -4,7 +4,7 @@
 # `terraform init -backend-config="bucket=<proyecto>-tfstate"` para no fijar un ID de proyecto
 # en el repositorio.
 terraform {
-  required_version = ">= 1.9"
+  required_version = ">= 1.11" # argumentos write-only (secrets.tf)
 
   backend "gcs" {
     prefix = "terraform"
@@ -14,6 +14,11 @@ terraform {
     google = {
       source  = "hashicorp/google"
       version = "~> 8.8"
+    }
+    # Genera la API key sin guardarla en el state (ephemeral random_password, secrets.tf).
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.7"
     }
     # Espera a que IAM propague el acceso al secreto antes de crear Cloud Run (cloud_run.tf).
     time = {

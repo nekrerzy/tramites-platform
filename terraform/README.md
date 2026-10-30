@@ -12,10 +12,10 @@ local y después se sube al bucket. **Solo si el bucket todavía no existe**: si
 "Clon nuevo".
 
 ```bash
-# 1. Primer apply con state local: APIs, bucket y secreto (sin valor).
+# 1. Todo, con state local (el bucket del state todavía no existe).
 printf 'terraform {\n  backend "local" {}\n}\n' > backend_override.tf
 terraform init
-terraform apply -target=google_storage_bucket.tfstate -target=google_secret_manager_secret.api_key
+terraform apply
 
 # 2. Subir el state al bucket y borrar la copia local (si se queda, podría subirse encima
 #    del state remoto más adelante).
@@ -23,17 +23,22 @@ rm backend_override.tf
 terraform init -migrate-state -force-copy -backend-config="bucket=<PROJECT_ID>-tfstate"
 rm -f terraform.tfstate terraform.tfstate.backup
 
-# 3. Valor del secreto: lo pide por teclado y nunca pasa por Terraform ni por el historial.
-read -rsp "API_KEY: " v && echo && printf '%s' "$v" | gcloud secrets versions add tramites-api-key --data-file=-
-
-# 4. Todo lo demás (Cloud Run, Artifact Registry, WIF, IAM, presupuesto).
-terraform apply
-
-# 5. Variables de GitHub Actions (nombres de recursos, no secretos).
+# 3. Variables de GitHub Actions (nombres de recursos, no secretos).
 terraform output -json github_variables \
   | python3 -c 'import json,sys; [print(k, v) for k, v in json.load(sys.stdin).items()]' \
   | while read -r k v; do gh variable set "$k" --body "$v"; done
 ```
+
+## API key
+
+Terraform la genera en el apply sin guardarla en el state (`secrets.tf`).
+
+```bash
+gcloud secrets versions access latest --secret=tramites-api-key   # ver el valor
+```
+
+Rotar: subir `secret_data_wo_version` en `secrets.tf`, `terraform apply` y desplegar de nuevo
+(Cloud Run lee `latest` al crear cada revisión).
 
 ## Clon nuevo
 
