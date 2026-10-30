@@ -1,6 +1,6 @@
 # Despliegue continuo: corre cuando ci.yml termina en verde sobre un push a main (CI -> CD).
-# Construye la imagen del commit que ci probó, la publica con versión SemVer + SHA, firma su
-# digest para Binary Authorization y la despliega en Cloud Run por digest. Autenticación con
+# Construye la imagen del commit que ci probó, la publica con versión SemVer + SHA y la
+# despliega en Cloud Run por digest. Autenticación con
 # Workload Identity Federation (sin llaves JSON); la cuenta gha-deployer solo puede ser usada
 # por ESTE workflow en main (ver service_accounts.tf). workflow_run siempre corre la versión
 # de este archivo en main, así que el claim workflow_ref sigue siendo deploy.yml@refs/heads/main.
@@ -64,7 +64,6 @@ jobs:
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
         with:
           version: "588.0.0"
-          install_components: beta
 
       - name: Construir y publicar imagen
         id: image
@@ -75,20 +74,10 @@ jobs:
           gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
           docker build --build-arg "APP_VERSION=${TAG}" -t "${IMAGE}:${TAG}" app
           docker push "${IMAGE}:${TAG}"
-          # De aquí en adelante solo se usa el digest: lo que se firma es lo que se despliega.
+          # De aquí en adelante solo se usa el digest: lo que se publica es lo que se despliega.
           digest_ref="$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE}:${TAG}")"
           echo "ref=${digest_ref}" >> "$GITHUB_OUTPUT"
           echo "Digest: ${digest_ref}"
-
-      - name: Firmar digest (atestación de Binary Authorization)
-        env:
-          IMAGE_REF: ${{ steps.image.outputs.ref }}
-        run: |
-          gcloud beta container binauthz attestations sign-and-create \
-            --artifact-url="${IMAGE_REF}" \
-            --attestor="${{ vars.BINAUTHZ_ATTESTOR }}" \
-            --keyversion="${{ vars.KMS_KEY_VERSION }}" \
-            --validate # falla aquí si la firma no verifica contra el attestor
 
       - name: Desplegar en Cloud Run por digest
         env:

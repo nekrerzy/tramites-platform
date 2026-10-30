@@ -13,7 +13,8 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 8.8"
     }
-    # Sufijo aleatorio del key ring de KMS (los key rings no se pueden borrar en GCP).
+    # Temporal: el estado aún tiene el random_id del key ring de KMS y Terraform necesita este
+    # provider para destruirlo. Se quita después del apply.
     random = {
       source  = "hashicorp/random"
       version = "~> 3.7"
@@ -30,8 +31,8 @@ provider "google" {
   project = var.project_id
   region  = var.region
 
-  # Cobra la cuota de las APIs a este proyecto. Con credenciales de usuario (ADC) algunas APIs,
-  # como Binary Authorization, rechazan la llamada si no se indica un proyecto de cuota.
+  # Cobra la cuota de las APIs a este proyecto. Con credenciales de usuario (ADC) algunas APIs
+  # rechazan la llamada si no se indica un proyecto de cuota.
   user_project_override = true
   billing_project       = var.project_id
 }

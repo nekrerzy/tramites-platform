@@ -15,11 +15,7 @@ output "github_variables" {
     GCP_REGION        = var.region
     GCP_WIF_PROVIDER  = "${local.wif_pool}/providers/github-oidc"
     GCP_DEPLOYER_SA   = google_service_account.deployer.email
-    GCP_DRIFT_SA      = google_service_account.drift.email
     AR_REPOSITORY     = google_artifact_registry_repository.app.repository_id
     CLOUD_RUN_SERVICE = google_cloud_run_v2_service.api.name
-    TF_STATE_BUCKET   = local.state_bucket
-    BINAUTHZ_ATTESTOR = google_binary_authorization_attestor.pipeline.id
-    KMS_KEY_VERSION   = local.kms_key_version
   }
 }

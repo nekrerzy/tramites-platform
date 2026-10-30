@@ -17,12 +17,6 @@ resource "google_cloud_run_v2_service" "api" {
   # Sin protección: la prueba exige que todo se pueda destruir con `terraform destroy`.
   deletion_protection = false
 
-  # Aplica la política de Binary Authorization del proyecto (binauthz.tf): solo corren
-  # imágenes atestiguadas por el pipeline.
-  binary_authorization {
-    use_default = true
-  }
-
   template {
     service_account = google_service_account.runtime.email
 
@@ -61,12 +55,8 @@ resource "google_cloud_run_v2_service" "api" {
     }
   }
 
-  # La espera de IAM y la política de Binary Authorization deben existir antes de la primera
-  # revisión (use_default = true aplica la política del proyecto).
-  depends_on = [
-    time_sleep.runtime_secret_access,
-    google_binary_authorization_policy.policy,
-  ]
+  # La espera de IAM debe terminar antes de la primera revisión.
+  depends_on = [time_sleep.runtime_secret_access]
 
   lifecycle {
     # La imagen la despliega el pipeline (por digest); Terraform maneja todo lo demás.

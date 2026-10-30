@@ -6,10 +6,7 @@ locals {
   apis = [
     "artifactregistry.googleapis.com",
     "billingbudgets.googleapis.com",
-    "binaryauthorization.googleapis.com",
-    "cloudkms.googleapis.com",
     "cloudresourcemanager.googleapis.com",
-    "containeranalysis.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
     "run.googleapis.com",
