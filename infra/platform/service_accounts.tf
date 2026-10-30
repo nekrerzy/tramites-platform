@@ -1,7 +1,6 @@
-# Tres cuentas de servicio, cada una con lo mínimo:
+# Dos cuentas de servicio, cada una con lo mínimo:
 #   runtime  -> identidad de Cloud Run; solo lee el secreto API_KEY.
 #   deployer -> la usa deploy.yml; publica la imagen y despliega ese único servicio.
-#   drift    -> la usa drift.yml; solo lectura para `terraform plan`.
 # La infraestructura la aplica una persona desde su laptop (ver README, decisiones).
 
 resource "google_service_account" "runtime" {
@@ -14,23 +13,12 @@ resource "google_service_account" "deployer" {
   display_name = "GitHub Actions: deploy.yml"
 }
 
-resource "google_service_account" "drift" {
-  account_id   = "gha-drift"
-  display_name = "GitHub Actions: drift.yml (solo lectura)"
-}
-
-# --- Workload Identity Federation: cada workflow solo puede usar su propia cuenta ---
+# --- Workload Identity Federation: solo deploy.yml en main puede usar la cuenta deployer ---
 
 resource "google_service_account_iam_member" "deployer_wif" {
   service_account_id = google_service_account.deployer.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = local.workflow_principal["deploy"]
-}
-
-resource "google_service_account_iam_member" "drift_wif" {
-  service_account_id = google_service_account.drift.name
-  role               = "roles/iam.workloadIdentityUser"
-  member             = local.workflow_principal["drift"]
+  member             = local.deploy_principal
 }
 
 # --- deployer ---
@@ -40,26 +28,4 @@ resource "google_service_account_iam_member" "deployer_act_as_runtime" {
   service_account_id = google_service_account.runtime.name
   role               = "roles/iam.serviceAccountUser"
   member             = google_service_account.deployer.member
-}
-
-# --- drift: solo lectura del proyecto y del estado ---
-
-resource "google_project_iam_member" "drift_readonly" {
-  for_each = toset([
-    "roles/viewer",
-    # Lectura de políticas IAM de cada recurso (los *_iam_member de este stack).
-    "roles/iam.securityReviewer",
-    # Permiso para cobrar la cuota al proyecto (user_project_override en versions.tf).
-    "roles/serviceusage.serviceUsageConsumer",
-  ])
-
-  project = var.project_id
-  role    = each.value
-  member  = google_service_account.drift.member
-}
-
-resource "google_storage_bucket_iam_member" "drift_state_reader" {
-  bucket = local.state_bucket
-  role   = "roles/storage.objectViewer"
-  member = google_service_account.drift.member
 }

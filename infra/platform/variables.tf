@@ -4,7 +4,7 @@ variable "project_id" {
 }
 
 variable "region" {
-  description = "Región de Cloud Run, Artifact Registry y KMS."
+  description = "Región de Cloud Run y Artifact Registry."
   type        = string
   default     = "us-central1"
 }

@@ -23,9 +23,6 @@ gcloud config set project $PROJECT_ID
 | Audit logs (quién cambió qué) | Logging → Explorador de registros, filtro abajo | `gcloud logging read 'logName:"cloudaudit.googleapis.com%2Factivity"' --freshness 1d --limit 20 --format='table(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.methodName)'` |
 | Secreto (metadatos, nunca el valor en pantalla) | Secret Manager → tramites-api-key | `gcloud secrets versions list tramites-api-key` |
 | Costos | Facturación → Informes; Facturación → Presupuestos y alertas | `gcloud billing budgets list --billing-account <BILLING_ACCOUNT_ID>` |
-| Política de Binary Authorization | Seguridad → Binary Authorization | `gcloud container binauthz policy export` |
-| Attestor y atestaciones | Binary Authorization → Attestors | `gcloud container binauthz attestors list` / `gcloud beta container binauthz attestations list --attestor pipeline-attestor --attestor-project $PROJECT_ID` |
-| Corridas de drift | GitHub → Actions → drift | `gh run list --workflow drift.yml --repo $REPO` / `gh issue list --label drift --repo $REPO` |
 | Corridas de deploy | GitHub → Actions → deploy | `gh run list --workflow deploy.yml --repo $REPO` / `gh run view <id> --log` |
 
 ## Cambio de punta a punta (rama → PR → pipeline → deploy)
@@ -50,48 +47,6 @@ Revertir un despliegue malo: `git revert` del merge en un PR (el pipeline redesp
 versión anterior). Urgencia: `gcloud run services update-traffic $SERVICE --region $REGION --to-revisions <revision-anterior>=100`
 y después el revert, para que `main` vuelva a describir lo que corre.
 
-## Binary Authorization: imagen sin firma rechazada
-
-```bash
-# a) Imagen pública cualquiera
-gcloud run deploy $SERVICE --region $REGION \
-  --image us-docker.pkg.dev/google-samples/containers/gke/hello-app:1.0
-# b) Nuestra propia imagen, publicada sin pasar por el pipeline (sin atestación)
-gcloud auth configure-docker $REGION-docker.pkg.dev
-docker build -t $REGION-docker.pkg.dev/$PROJECT_ID/tramites/tramites-api:sin-firma-1 app
-docker push $REGION-docker.pkg.dev/$PROJECT_ID/tramites/tramites-api:sin-firma-1
-gcloud run deploy $SERVICE --region $REGION \
-  --image $REGION-docker.pkg.dev/$PROJECT_ID/tramites/tramites-api:sin-firma-1
-```
-
-Ambos fallan con un error de política de Binary Authorization ("not authorized by policy" /
-"denied by attestor"); la revisión en curso sigue sirviendo. Evidencia en audit logs:
-
-```bash
-gcloud logging read 'protoPayload.serviceName="run.googleapis.com" AND severity>=ERROR' --freshness 1h --limit 5
-```
-
-Contraste: la imagen desplegada por el pipeline sí tiene atestación
-(`gcloud beta container binauthz attestations list ...` de la tabla).
-
-## Drift: provocarlo y detectarlo
-
-```bash
-# 1. "Alguien" cambia algo en la consola (o con gcloud):
-gcloud run services update $SERVICE --region $REGION --max-instances 5
-# 2. Correr la detección sin esperar el cron:
-gh workflow run drift.yml --repo $REPO
-gh run watch $(gh run list --workflow drift.yml --limit 1 --json databaseId --jq '.[0].databaseId')
-gh issue list --label drift --repo $REPO      # issue con el plan: max_instance_count 5 -> 2
-# 3. Corregir: volver al estado del código
-make platform                                  # terraform apply (desde la laptop del operador)
-```
-
-Otros cambios que el drift detecta: quitar `allUsers` del invocador
-(`gcloud run services remove-iam-policy-binding $SERVICE --region $REGION --member allUsers --role roles/run.invoker`),
-cambiar memoria/CPU o agregar una variable de entorno. **No** cuenta como drift el cambio de
-imagen: lo maneja el pipeline (`ignore_changes`).
-
 ## Si algo falla en vivo
 
 - `deploy.yml` falla en `auth`: revisar variables (`gh variable list --repo $REPO`) y que el
@@ -101,7 +56,3 @@ imagen: lo maneja el pipeline (`ignore_changes`).
 - `gcloud run deploy` del pipeline sin permiso: `gha-deployer` tiene lo que pide la doc de
   Cloud Run (`run.developer` sobre el servicio, `serviceAccountUser` sobre `tramites-runtime`,
   lectura del repo de AR). Revisar esos bindings y que el servicio no se haya recreado.
-- `sign-and-create --validate` falla: revisar `attestorsVerifier` sobre el attestor y
-  `signerVerifier` sobre la llave (`gcloud container binauthz attestors get-iam-policy pipeline-attestor`).
-- Emergencia con Binary Authorization: despliegue con `--breakglass "justificación"` (queda
-  en audit logs).

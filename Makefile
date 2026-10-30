@@ -58,7 +58,7 @@ secret-version: ## 4. Carga el valor de API_KEY en Secret Manager (lo pide por t
 		printf '%s' "$$value" | gcloud secrets versions add tramites-api-key \
 		--project="$(PROJECT_ID)" --data-file=-
 
-platform: ## 5. Resto de la plataforma (Cloud Run, AR, KMS, BinAuthz, IAM)
+platform: ## 5. Resto de la plataforma (Cloud Run, AR, IAM)
 	$(TF_PLATFORM) apply $(PLATFORM_VARS)
 
 github-vars: ## 6. Carga las variables de GitHub Actions con gh
