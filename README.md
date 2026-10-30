@@ -18,7 +18,7 @@ desarrollo despliegan solos: merge a `main` → imagen versionada y firmada → 
 flowchart LR
     dev([Dev]) -->|PR feature/DEVOPS-xx| gh[GitHub]
     gh -->|ci.yml: ruff, pytest,<br/>docker build, tf validate, gitleaks| gh
-    gh -->|merge a main<br/>deploy.yml| wif{{Workload Identity<br/>Federation}}
+    gh -->|ci.yml verde en main<br/>deploy.yml| wif{{Workload Identity<br/>Federation}}
     wif -->|gha-deployer| ar[(Artifact Registry<br/>tramites-api:0.1.0-sha)]
     wif -->|firma digest| kms[KMS + Attestor<br/>Binary Authorization]
     wif -->|deploy por digest| run[Cloud Run<br/>tramites-api]
@@ -36,7 +36,7 @@ flowchart LR
 | `app/` | API FastAPI (`/health`, `/tramites/{numero}`), pruebas, `Dockerfile` multistage no-root, `uv.lock` |
 | `infra/bootstrap/` | Estado **local**: bucket del estado remoto, APIs, pool/proveedor WIF, alerta de presupuesto |
 | `infra/platform/` | Estado **remoto en GCS**: Artifact Registry, Secret Manager, Cloud Run, cuentas de servicio, KMS + Binary Authorization |
-| `.github/workflows/` | `ci.yml` (PR), `deploy.yml` (main), `drift.yml` (cron) |
+| `.github/workflows/` | `ci.yml` (PR y main), `deploy.yml` (tras ci verde en main), `drift.yml` (cron) |
 | `CRITERIO.md` | Parte C: ADR, automatizaciones, tiempo de ingeniería |
 | `docs/sesion-en-vivo.md` | Chuleta para la sesión en vivo (consola y gcloud) |
 

@@ -1,15 +1,16 @@
-# Despliegue continuo: cada merge a main que toca app/ construye la imagen, la publica con
-# versión SemVer + SHA, firma su digest para Binary Authorization y la despliega en Cloud Run
-# por digest. Autenticación con Workload Identity Federation (sin llaves JSON); la cuenta
-# gha-deployer solo puede ser usada por ESTE workflow en main (ver service_accounts.tf).
+# Despliegue continuo: corre cuando ci.yml termina en verde sobre un push a main (CI -> CD).
+# Construye la imagen del commit que ci probó, la publica con versión SemVer + SHA, firma su
+# digest para Binary Authorization y la despliega en Cloud Run por digest. Autenticación con
+# Workload Identity Federation (sin llaves JSON); la cuenta gha-deployer solo puede ser usada
+# por ESTE workflow en main (ver service_accounts.tf). workflow_run siempre corre la versión
+# de este archivo en main, así que el claim workflow_ref sigue siendo deploy.yml@refs/heads/main.
 name: deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
     branches: [main]
-    paths:
-      - "app/**"
-      - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
 permissions:
@@ -25,29 +26,30 @@ env:
   PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
   REGION: ${{ vars.GCP_REGION }}
   SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+  # El commit que ci probó (no el último de main, que pudo avanzar mientras ci corría).
+  DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   deploy:
+    # Solo ci en verde de un push a este mismo repo: nunca de un PR (ni de un fork con una
+    # rama llamada main), y nunca si ci falló o se canceló.
+    if: >-
+      github.event_name == 'workflow_dispatch' || (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          version: "0.12.5"
-
-      - name: Pruebas (última barrera antes de publicar)
-        working-directory: app
-        run: |
-          uv sync --frozen
-          uv run pytest -q
+          ref: ${{ env.DEPLOY_SHA }}
 
       - name: Calcular versión e imagen
         id: meta
         run: |
           version="$(python3 -c 'import tomllib; print(tomllib.load(open("app/pyproject.toml","rb"))["project"]["version"])')"
           # SemVer de pyproject.toml + SHA corto: única por commit (las etiquetas son inmutables).
-          tag="${version}-${GITHUB_SHA::7}"
+          tag="${version}-${DEPLOY_SHA::7}"
           image="${REGION}-docker.pkg.dev/${PROJECT_ID}/${{ vars.AR_REPOSITORY }}/tramites-api"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "image=${image}" >> "$GITHUB_OUTPUT"
