@@ -43,6 +43,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.DEPLOY_SHA }}
+          fetch-depth: 0 # para comparar contra el commit que está desplegado
 
       - name: Calcular versión e imagen
         id: meta
@@ -66,8 +67,31 @@ jobs:
           version: "588.0.0"
           install_components: beta
 
+      # workflow_run no soporta `paths`: se compara contra lo que corre HOY en Cloud Run (el SHA
+      # que reporta /health), no contra el commit anterior. Así un despliegue fallido o un push
+      # con varios commits no deja cambios de app/ sin desplegar. Manual = siempre despliega.
+      - name: ¿Cambió app/ desde la versión desplegada?
+        id: changes
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          url="$(gcloud run services describe "${SERVICE}" --region="${REGION}" --format='value(status.url)' || true)"
+          deployed="$(curl -fsS --retry 3 "${url}/health" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"].rsplit("-", 1)[-1])' 2>/dev/null || true)"
+          echo "Desplegado: ${deployed:-desconocido}"
+          # Ante cualquier duda (versión ilegible, SHA que no existe) se despliega igual.
+          if [ -n "${deployed}" ] && git diff --quiet "${deployed}" "${DEPLOY_SHA}" -- app .github/workflows/deploy.yml; then
+            echo "app=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Sin cambios en app/ desde ${deployed}; no se despliega."
+          else
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Construir y publicar imagen
         id: image
+        if: steps.changes.outputs.app == 'true'
         env:
           IMAGE: ${{ steps.meta.outputs.image }}
           TAG: ${{ steps.meta.outputs.tag }}
@@ -81,6 +105,7 @@ jobs:
           echo "Digest: ${digest_ref}"
 
       - name: Firmar digest (atestación de Binary Authorization)
+        if: steps.changes.outputs.app == 'true'
         env:
           IMAGE_REF: ${{ steps.image.outputs.ref }}
         run: |
@@ -91,6 +116,7 @@ jobs:
             --validate # falla aquí si la firma no verifica contra el attestor
 
       - name: Desplegar en Cloud Run por digest
+        if: steps.changes.outputs.app == 'true'
         env:
           IMAGE_REF: ${{ steps.image.outputs.ref }}
         run: |
@@ -100,9 +126,10 @@ jobs:
             --quiet
 
       - name: Smoke test de /health
+        if: steps.changes.outputs.app == 'true'
         env:
           TAG: ${{ steps.meta.outputs.tag }}
         run: |
-          url="$(gcloud run services describe "${SERVICE}" --region="${REGION}" --format='value(status.url)')"
+          url="$(gcloud run services describe "${SERVICE}" --region="${REGION}" --format='value(status.url)' || true)"
           curl -fsS --retry 5 --retry-delay 3 --retry-all-errors "${url}/health" | tee health.json
           grep -q "\"version\":\"${TAG}\"" health.json
