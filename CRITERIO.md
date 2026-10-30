@@ -1,60 +1,55 @@
-# Criterio técnico
+# Criterio
 
-> Borrador: reescribir con tus palabras. Es un punto de partida generado con IA; la versión
-> final debe reflejar tu propio juicio y experiencia.
+## 1. ADR-001: ¿dónde viven los pipelines y con qué herramienta?
 
-## 1. ADR-001: dónde viven los pipelines y con qué herramienta
+**Contexto.** Una célula de 6 personas atiende a equipos de Go, Python y React que quieren
+desplegar solos. Hoy hay un servicio; pronto habrá muchos repositorios.
 
-**Contexto.** Una célula de 6 personas da servicio a equipos Go, Python y React que quieren
-desplegar sin pedirle nada a DevOps. Hoy hay un servicio; mañana habrá varios repos.
+**Decisión.** Una **plantilla central que cada repo usa**. DevOps mantiene workflows
+reutilizables y versionados (por ejemplo `uses: ministerio/pipelines/.github/workflows/python.yml@v1`)
+y cada equipo tiene un `deploy.yml` de pocas líneas que los llama. DevOps decide *cómo* se
+construye y se despliega de forma segura; el equipo decide *cuándo* y *qué* despliega.
+Herramienta: **GitHub Actions**, entrando a GCP con Workload Identity Federation.
 
-**Decisión.** *Pipelines centralizados como plantilla, ejecutados en cada repo*: los equipos
-llaman workflows reutilizables versionados (`uses: ministerio/pipelines/.github/workflows/python.yml@v1`)
-desde un `deploy.yml` corto en su repo. DevOps es dueño de la plantilla (build, firma,
-deploy, seguridad); el equipo es dueño de cuándo y qué despliega. Herramienta: **GitHub
-Actions**, autenticado a GCP con Workload Identity Federation.
+**Lo que descarté.**
+- *Un pipeline distinto en cada repo:* cada equipo reinventa la seguridad y un arreglo no
+  llega a los demás.
+- *Un solo pipeline central que despliega todo:* se vuelve cuello de botella y los equipos
+  vuelven a depender de DevOps.
+- *Cloud Build:* se integra muy bien con GCP, pero el código, los PR y los checks ya están en
+  GitHub. Tener los dos duplica dónde buscar logs y permisos, y para este flujo Actions alcanza.
 
-**Descartado.**
-- *Un pipeline completo y distinto por repo*: cada equipo reinventa seguridad y firma; los
-  arreglos no se propagan; deriva entre repos.
-- *Un pipeline único central que despliega todo*: cuello de botella y punto único de falla;
-  los equipos vuelven a depender de DevOps para cada cambio.
-- *Cloud Build*: integra nativo con GCP (sin WIF, pools privados en VPC), pero el código, los
-  PR, los checks obligatorios y la experiencia del desarrollador ya están en GitHub; sumar
-  Cloud Build duplica dónde mirar logs y permisos. Para lo que hace este pipeline, Actions
-  alcanza y es gratis en repos públicos.
+**Lo revisaría si** algún build tiene que correr dentro de la red privada, si hay requisitos
+de dónde corren los runners, o si los minutos de Actions empiezan a costar más que Cloud Build.
 
-**Revisar cuando** haya builds que deban correr dentro de la red privada (acceso a recursos
-sin IP pública), requisitos de residencia/soberanía de datos de los runners, o el costo de
-minutos de Actions supere al de Cloud Build. También si se adopta Cloud Deploy para
-promociones entre ambientes.
+## 2. Cinco automatizaciones para el primer trimestre
 
-## 2. Las 5 automatizaciones del primer trimestre
+Las ordené por **cuánto riesgo y trabajo repetido quitan, dividido entre lo que cuestan**, y
+puse primero lo que deja a los equipos avanzar sin pasar por la célula.
 
-Criterio de orden: **(riesgo que elimina × frecuencia) / esfuerzo**, y primero lo que
-desbloquea a los equipos sin pasar por la célula.
+1. **Plantilla de pipeline** para Python, Go y React (pruebas, imagen versionada, escaneo y
+   deploy). Es lo que piden los equipos y lo que más tickets elimina.
+2. **Alta de servicio en autoservicio:** un módulo de Terraform donde el equipo pone nombre y
+   dueño, y obtiene repo de imágenes, cuenta de servicio, secreto y Cloud Run con permisos
+   mínimos.
+3. **`terraform plan` en cada PR y detección de drift diaria:** nadie aplica a ciegas y un
+   cambio hecho a mano en la consola aparece al día siguiente.
+4. **Seguridad dentro de la plantilla:** secretos, vulnerabilidades y firma de imágenes (Binary
+   Authorization) para los programas críticos. Cuesta poco cuando ya existe la plantilla.
+5. **Observabilidad desde el día uno:** cada servicio nace con dashboard, uptime check,
+   alertas de errores y latencia, y presupuesto por equipo.
 
-1. **Plantilla de pipeline reutilizable** (build, pruebas, firma, deploy por digest) para
-   Python, Go y React. Es el pedido explícito de los equipos y lo que más tickets elimina.
-2. **Alta de servicio self-service**: un módulo de Terraform (`service = { name, team }`) que
-   crea repo de AR, cuenta de servicio, secreto y servicio Cloud Run con mínimo privilegio.
-3. **Plan de Terraform en cada PR + drift diario** con issue automático: nadie aplica a ciegas
-   y los cambios en consola se ven al día siguiente.
-4. **Seguridad en el pipeline**: escaneo de secretos y de vulnerabilidades, Binary
-   Authorization obligatoria. Barato una vez que existe la plantilla (1).
-5. **Observabilidad por defecto**: dashboard, uptime check y alertas de error/latencia (SLO)
-   creados con cada servicio, más presupuestos por equipo.
+## 3. ¿Cómo aseguro que al menos la mitad del tiempo sea ingeniería?
 
-## 3. Al menos 50 % del tiempo en ingeniería
-
-- **Medirlo**: etiquetar cada ticket como *ingeniería* (automatización, plataforma, deuda) u
-  *operación* (pedidos, incidentes, accesos manuales). Sin medición es una opinión.
-- **Límite explícito**: si la operación pasa del 50 % dos semanas seguidas, la siguiente
-  semana se prioriza automatizar la causa principal de esa operación.
-- **Rotación de guardia**: una o dos personas absorben la operación cada semana; el resto
-  queda protegido para proyectos.
-- **Todo pedido repetido tres veces se convierte en automatización o en self-service** con
-  documentación.
-- **Revisión semanal (30 min)**: % ingeniería vs operación; top 3 tipos de pedido manual;
-  incidentes y acciones pendientes; frecuencia de despliegue, lead time, tasa de fallo y MTTR
-  (DORA); issues de drift abiertos; gasto vs presupuesto.
+- **Medirlo.** Cada ticket se marca como *ingeniería* (automatizar, plataforma, deuda) u
+  *operación* (pedidos, incidentes, accesos manuales). Sin medirlo, es una opinión.
+- **Un límite claro.** Si la operación pasa del 50 % dos semanas seguidas, la semana siguiente
+  se dedica a automatizar la causa más grande.
+- **Guardia rotativa.** Una o dos personas por semana atienden la operación; el resto queda
+  protegido para proyectos.
+- **Regla de tres.** Un pedido que llega tres veces se convierte en automatización o en
+  autoservicio con documentación.
+- **Revisión semanal de 30 minutos:** porcentaje de ingeniería contra operación; los 3 pedidos
+  manuales más comunes; incidentes y sus acciones pendientes; métricas DORA (frecuencia de
+  despliegue, tiempo de entrega, tasa de fallos y tiempo de recuperación); y gasto contra
+  presupuesto.
