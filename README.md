@@ -1,196 +1,153 @@
 # tramites-platform
 
-Plataforma mínima de despliegue en GCP para la consulta de estado de trámite del
-"Ministerio de Trámites Ciudadanos" (prueba técnica DevOps Tech Lead).
+Plataforma para que el equipo de desarrollo despliegue solo, sin pedirle ayuda a DevOps.
+La app de ejemplo es la consulta de estado de trámite del "Ministerio de Trámites
+Ciudadanos" (ficticio): el ciudadano manda su número y ve en qué va.
 
-Un ciudadano consulta `GET /tramites/{numero}` y obtiene el estado. Los equipos de
-desarrollo despliegan solos: merge a `main` → imagen versionada → Cloud Run.
+**En una frase:** abres un PR, el pipeline lo revisa, lo fusionas y en un par de minutos
+está en producción en Cloud Run.
 
-> **Uso de IA.** Este repositorio se construyó con ayuda de **Claude (Anthropic), modelo
-> Claude Opus 5.5, usado desde Claude Code**: andamiaje del repo, Terraform, workflows de
-> GitHub Actions y primeros borradores de la documentación. Todo lo revisé, lo apliqué en mi
-> proyecto y lo puedo explicar. Los commits hechos con el asistente conservan el trailer
-> `Co-Authored-By: Claude ...`; **no se eliminó la atribución**.
+> **Uso de IA.** Construí este repositorio con ayuda de **Claude (Anthropic), modelo Claude
+> Opus 5.5, desde Claude Code**: Terraform, workflows, Dockerfile y borradores de la
+> documentación. Lo revisé, lo apliqué en mi proyecto y lo puedo explicar y modificar. Los
+> commits hechos con el asistente conservan su atribución (`Co-Authored-By: Claude ...`).
 
-## Arquitectura
+## Cómo funciona
 
 ```mermaid
 flowchart LR
-    dev([Dev]) -->|PR feature/DEVOPS-xx| gh[GitHub]
-    gh -->|ci.yml: ruff, pytest,<br/>docker build, tf validate, gitleaks| gh
-    gh -->|ci.yml verde en main<br/>deploy.yml| wif{{Workload Identity<br/>Federation}}
-    wif -->|gha-deployer| ar[(Artifact Registry<br/>tramites-api:0.1.0-sha)]
-    wif -->|deploy por digest| run[Cloud Run<br/>tramites-api]
-    ar --> run
-    sm[(Secret Manager<br/>tramites-api-key)] -->|API_KEY env| run
+    dev([Dev]) -->|abre PR| ci[ci.yml<br/>pruebas, docker, terraform,<br/>vulnerabilidades, secretos]
+    ci -->|verde: se puede fusionar| main[(main protegida)]
+    main -->|cambió app/| deploy[deploy.yml]
+    deploy -->|sin llaves: WIF| gcp{{GCP}}
+    gcp --> ar[(Artifact Registry<br/>imagen 0.1.0-sha)]
+    ar -->|por digest| run[Cloud Run<br/>tramites-api]
+    sm[(Secret Manager<br/>API_KEY)] --> run
     cit([Ciudadano]) -->|HTTPS| run
-    budget[Budget USD 10] -. correo 50/90/100 % .-> owner([Dueño de la cuenta])
 ```
 
-| Ruta | Qué hay |
+| Qué | Dónde |
 |---|---|
-| `app/` | API FastAPI (`/health`, `/tramites/{numero}`), pruebas, `Dockerfile` multistage no-root, `uv.lock` |
-| `infra/bootstrap/` | Estado **local**: bucket del estado remoto, APIs, pool/proveedor WIF, alerta de presupuesto |
-| `infra/platform/` | Estado **remoto en GCS**: Artifact Registry, Secret Manager, Cloud Run, cuentas de servicio |
-| `.github/workflows/` | `ci.yml` (PR y main), `deploy.yml` (tras ci verde en main) |
-| `CRITERIO.md` | Parte C: ADR, automatizaciones, tiempo de ingeniería |
-| `docs/sesion-en-vivo.md` | Chuleta para la sesión en vivo (consola y gcloud) |
+| La API (FastAPI): `/health` y `/tramites/{numero}` | `app/` |
+| Toda la infraestructura, un solo Terraform con state en GCS | `terraform/` |
+| Revisión de cada PR | `.github/workflows/ci.yml` |
+| Despliegue al fusionar | `.github/workflows/deploy.yml` |
+| Atajos para correr la app en tu máquina | `Makefile` |
 
-### Autenticación de la API (decisión explícita)
+### Los dos pipelines
 
-- `GET /health`: **público a propósito** (lo usan Cloud Run y el smoke test; no expone datos).
-- `GET /tramites/{numero}`: exige la cabecera `X-API-Key`. El valor esperado es el secreto
-  `tramites-api-key` de Secret Manager, que Cloud Run inyecta como variable `API_KEY`. Si el
-  secreto falta, responde 503 (falla cerrado). La llave nunca se registra en logs.
-- Cloud Run permite `allUsers` como invocador: es un servicio ciudadano. La API key
-  representa al cliente (el frontend del ministerio), no al ciudadano.
+- **ci** corre en cada PR: ruff y pytest, construye la imagen (verifica que no corra como
+  root y la escanea con Trivy), valida Terraform y busca secretos con gitleaks en todo el
+  historial. `main` está protegida: sin estos checks en verde no se puede fusionar.
+- **deploy** corre al fusionar a `main` si cambió `app/`: construye la imagen, la publica
+  como `0.1.0-<sha>` (nunca `:latest`), la despliega por digest y comprueba que `/health`
+  responda con la versión nueva. No repite las pruebas: ya pasaron en el PR.
 
-## Estándares del repositorio
+### Quién puede llamar a la API
 
-- Trunk-based: `main` protegida, todo entra por PR con pipeline en verde. Ramas
-  `feature/{ticket}-desc`, `fix/{ticket}`, `hotfix/{ticket}` (tickets `DEVOPS-xx`).
-- Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `security:`, `ci:`).
-- Versiones fijadas: providers en `.terraform.lock.hcl`, Python en `uv.lock`, imágenes base
-  por versión **y** digest, actions por SHA de commit, gcloud y Terraform por versión.
-  Nunca se despliega `:latest`: se despliega por digest.
-- Sin credenciales en git: `.env`, `*.tfvars` y llaves JSON están en `.gitignore`; gitleaks
-  escanea todo el historial en cada PR; no existen llaves de cuentas de servicio (WIF).
+- `GET /health` es **público a propósito**: lo usan Cloud Run y el smoke test, no expone datos.
+- `GET /tramites/{numero}` pide la cabecera `X-API-Key`. El valor vive en Secret Manager y
+  Cloud Run lo entrega a la app como variable `API_KEY`. Si falta, la API responde 503.
 
-## Despliegue desde cero
-
-Requisitos: `gcloud`, `terraform` 1.15.x, `uv`, `docker`, `gh`, `make`. Proyecto GCP propio con
-facturación enlazada. Todo lo que sigue se ejecuta con **tus** credenciales.
+## Probar la app en tu máquina
 
 ```bash
-# 0. Credenciales locales y configuración
-gcloud auth login
-gcloud auth application-default login
+cp .env.example .env          # pon cualquier valor en API_KEY
+make run-local                # o: make run-local PORT=8081 si el 8080 está ocupado
+curl -H "X-API-Key: <tu valor>" http://localhost:8080/tramites/TRM-2026-000123
+```
+
+`make test` y `make lint` corren lo mismo que revisa el pipeline.
+
+## Desplegar desde cero
+
+Necesitas `gcloud`, `terraform` 1.11 o más nuevo, `docker`, `gh` y un proyecto de GCP con
+facturación.
+
+```bash
+# 1. Tus credenciales
+gcloud auth login && gcloud auth application-default login
 gcloud config set project <PROJECT_ID>
 gcloud auth application-default set-quota-project <PROJECT_ID>
 gcloud services enable cloudresourcemanager.googleapis.com serviceusage.googleapis.com
-cp .env.example .env   # completar PROJECT_ID, BILLING_ACCOUNT_ID, GITHUB_REPO, API_KEY...
 
-# 1. Repositorio en GitHub (público: la protección de ramas en repos privados requiere plan pago)
-gh repo create <usuario>/tramites-platform --public --source . --remote origin
-git push origin main
-# Protección de main: PR obligatorio + checks de ci.yml en verde, sin force-push
+# 2. Infraestructura (detalle paso a paso en terraform/README.md)
+cd terraform
+cp terraform.tfvars.example terraform.tfvars    # completa tus valores
+printf 'terraform {\n  backend "local" {}\n}\n' > backend_override.tf
+terraform init && terraform apply               # crea todo, con state local la primera vez
+rm backend_override.tf
+terraform init -migrate-state -force-copy -backend-config="bucket=<PROJECT_ID>-tfstate"
+rm -f terraform.tfstate terraform.tfstate.backup
+
+# 3. Variables que usa el pipeline (son nombres de recursos, no secretos)
+terraform output -json github_variables \
+  | python3 -c 'import json,sys; [print(k, v) for k, v in json.load(sys.stdin).items()]' \
+  | while read -r k v; do gh variable set "$k" --body "$v"; done
+cd ..
+
+# 4. Proteger main: PR obligatorio con los checks de ci en verde
 gh api -X PUT repos/<usuario>/tramites-platform/branches/main/protection --input - <<'JSON'
 {
   "required_status_checks": {"strict": true, "contexts": [
-    "app (ruff + pytest)", "docker build (non-root)", "secret scan (gitleaks)"]},
+    "app (ruff + pytest)", "docker build (non-root + vulnerabilidades)",
+    "terraform fmt + validate", "secret scan (gitleaks)"]},
   "enforce_admins": true,
   "required_pull_request_reviews": {"required_approving_review_count": 0},
-  "restrictions": null,
-  "allow_force_pushes": false,
-  "allow_deletions": false
+  "restrictions": null, "allow_force_pushes": false, "allow_deletions": false
 }
 JSON
 
-# 2. PRs en orden (ver tabla abajo). Tras fusionar DEVOPS-02, exigir también los checks de Terraform:
-gh api -X POST repos/<usuario>/tramites-platform/branches/main/protection/required_status_checks/contexts \
-  --input - <<'JSON'
-{"contexts": ["terraform fmt + validate (infra/bootstrap)", "terraform fmt + validate (infra/platform)"]}
-JSON
-git checkout main && git pull
-make bootstrap            # bucket de estado, APIs, WIF, presupuesto
-
-# 3. Tras fusionar DEVOPS-03:
-make platform-init        # conecta con el bucket <PROJECT_ID>-tfstate
-make platform-secret      # crea el secreto (sin valor)
-make secret-version       # pide el valor de API_KEY y lo agrega como versión
-make platform             # Cloud Run (imagen placeholder), AR, IAM
-#   Tarda ~1 min de más: un time_sleep espera a que IAM propague el permiso secretAccessor antes
-#   de crear Cloud Run (cloud_run.tf), así el primer apply no falla con "permission denied".
-make github-vars          # carga GCP_* y demás variables en GitHub Actions
-
-# 4. Fusionar DEVOPS-05 (deploy.yml): el merge dispara el primer despliegue real.
-gh run watch
-URL=$(gcloud run services describe tramites-api --region <REGION> --format='value(status.url)')
+# 5. Primer despliegue y prueba
+gh workflow run deploy.yml && gh run watch
+URL=$(terraform -chdir=terraform output -raw service_url)
+KEY=$(gcloud secrets versions access latest --secret=tramites-api-key)
 curl $URL/health
-curl -H "X-API-Key: <valor>" $URL/tramites/TRM-2026-000123
-
-# 5. Fusionar DEVOPS-07 (docs). Probar: docs/sesion-en-vivo.md.
+curl -H "X-API-Key: $KEY" $URL/tramites/TRM-2026-000123
 ```
 
-Orden de PRs (ramas apiladas; fusionar con **merge commit** para que cada rama siguiente
-siga aplicando limpio y se conserven los trailers de los commits):
+**Destruir todo:** ver "Destruir todo" en `terraform/README.md`. Es un `terraform destroy`
+precedido de bajar el state a local, porque el bucket del state también se borra.
 
-| # | Rama | Contenido |
-|---|---|---|
-| 1 | `feature/DEVOPS-01-api-tramites` | App, Dockerfile, `.env.example`, CI de PR |
-| 2 | `feature/DEVOPS-02-bootstrap-gcp` | Bucket de estado, APIs, WIF, presupuesto, `Makefile`; validación de Terraform en CI |
-| 3 | `feature/DEVOPS-03-plataforma-cloud-run` | AR, Secret Manager, Cloud Run, cuentas de servicio |
-| 4 | `feature/DEVOPS-04-binary-authorization` | KMS, attestor, política BinAuthz (retirado en DEVOPS-15) |
-| 5 | `feature/DEVOPS-05-pipeline-deploy` | `deploy.yml` (build, deploy por digest) |
-| 6 | `feature/DEVOPS-06-drift-detection` | `drift.yml` + issue automático (retirado en DEVOPS-15) |
-| 7 | `feature/DEVOPS-07-documentacion` | README, CRITERIO.md, chuleta de sesión en vivo |
+## Decisiones (y lo que descarté)
 
-### Destruir todo
+1. **El pipeline entra a GCP con Workload Identity Federation (reto de la Parte B, opción 1).**
+   GitHub presenta un token de corta duración y solo `deploy.yml` en `main` puede usar la
+   cuenta `gha-deployer`, que solo puede publicar en este repo de imágenes y desplegar este
+   servicio. *Descarté* llaves JSON (se filtran y no expiran) y dar acceso a todo el repo
+   (cualquier workflow nuevo en un PR podría desplegar).
+2. **Un solo Terraform con un solo state, y Terraform crea su propio bucket.** El primer apply
+   guarda el state en local y después se sube al bucket. *Descarté* dos stacks separados
+   (empecé así y el state local del primero se perdió) y crear el bucket a mano.
+3. **La API key la genera Terraform sin guardarla nunca.** Usa un valor efímero y un argumento
+   *write-only*: va directo a Secret Manager y no queda ni en el state ni en el plan.
+   *Descarté* ponerla en `terraform.tfvars` (quedaría en texto plano en el state) y cargarla a
+   mano (un paso más y un segundo apply).
+4. **Dos pipelines simples; la seguridad la da la protección de `main`.** *Descarté* encadenar
+   deploy a ci con `workflow_run`: lo implementé y funcionaba, pero necesitaba guardas extra
+   (PRs de forks, qué commit desplegar, sin filtro por carpetas) y era difícil de explicar.
+5. **El pipeline es dueño de la imagen; Terraform, de todo lo demás.** *Descarté* que el
+   pipeline corra `terraform apply`: su cuenta necesitaría permisos casi de Owner.
+6. **Probé y retiré Binary Authorization y la detección de drift** (opciones 2 y 3). Ambas
+   funcionaron, pero eran opcionales y sumaban piezas (KMS, attestor, una segunda cuenta y un
+   cron) que no hacían falta para el objetivo. El historial de git las conserva.
 
-```bash
-make destroy   # primero infra/platform (estado remoto), al final infra/bootstrap (bucket y presupuesto)
-```
+## Costo
 
-Lo que **no** desaparece y por qué no cuesta:
-
-- **Workload Identity Pool**: queda 30 días en soft-delete. Para recrear antes, cambiar
-  `wif_pool_id` o `gcloud iam workload-identity-pools undelete github --location=global`.
-- Las APIs quedan habilitadas (`disable_on_destroy = false`), sin costo.
-
-## Decisiones (y lo que se descartó)
-
-1. **La infraestructura la aplica una persona desde su laptop; el pipeline solo despliega la
-   app.** Descartado: un workflow de `terraform apply` con su propia cuenta. Esa cuenta
-   necesitaría administrar IAM (casi Owner) y sería la credencial más valiosa
-   del repo; para una persona y pocos cambios de infra no compensa.
-   *Revisar* cuando más de una persona cambie infra: `plan` en el
-   PR + `apply` al fusionar con aprobación (GitHub Environments).
-2. **El pipeline es dueño de la imagen; Terraform de todo lo demás** (`ignore_changes` sobre
-   la imagen de Cloud Run). Descartado: que el pipeline corra `terraform apply -var image=...`
-   (la cuenta de deploy tendría que escribir estado y tener permisos de toda la infra) y que
-   gcloud cree el servicio completo (la configuración de Cloud Run dejaría de ser código).
-   Costo: el servicio se crea con una imagen *placeholder* de Google.
-3. **WIF atado a cada workflow, no al repositorio.** `gha-deployer` solo lo puede usar
-   `deploy.yml` en `main` (claim `workflow_ref`).
-   Descartado: binding por repositorio (cualquier workflow, incluido uno agregado en un PR,
-   podría desplegar). El proveedor además rechaza tokens de cualquier otro repo
-   (`attribute_condition`).
-4. **El valor del secreto nunca pasa por Terraform.** Terraform crea el secreto y el permiso;
-   el valor se agrega con `gcloud secrets versions add`. Descartado:
-   `google_secret_manager_secret_version` con el valor en tfvars (quedaría en texto plano en el
-   estado del bucket).
-5. **Versión = SemVer de `app/pyproject.toml` + SHA corto** (`0.1.0-abc1234`), etiquetas
-   inmutables en Artifact Registry y despliegue por digest. Descartado:
-   release-please/semantic-release (más piezas para una prueba) y etiquetas mutables. Subir
-   la versión es parte del PR.
-6. **GitHub Actions en vez de Cloud Build**: ver `CRITERIO.md`.
-
-## Costo estimado
-
-Objetivo: < USD 10 en total; esperado **< USD 1/mes** con tráfico de prueba.
-
-| Recurso | Costo |
-|---|---|
-| Cloud Run (min 0, max 2, CPU solo en request) | Dentro de la capa gratuita |
-| Artifact Registry (≤ 5 imágenes de ~60 MB, limpieza automática) | 0.5 GB gratis → ~USD 0 |
-| Secret Manager (1 secreto, pocas versiones) | Capa gratuita |
-| GCS (estado de Terraform, KB) | ~USD 0 |
-| WIF, IAM, presupuesto | Sin costo |
-| GitHub Actions (repo público) | Sin costo |
-
-No se habilita el escaneo de vulnerabilidades de Artifact Analysis (cobra por imagen).
-La alerta de presupuesto **avisa, no corta** el gasto.
+Objetivo: menos de USD 10 en total; esperado menos de USD 1 al mes con tráfico de prueba.
+Cloud Run escala a cero, Artifact Registry borra imágenes viejas (conserva las 5 más
+recientes) y hay una **alerta de presupuesto** de USD 10 que avisa por correo al 50, 90 y
+100 %. La alerta avisa, no corta el gasto.
 
 ## Pendiente
 
-- `terraform plan` comentado en cada PR que toque `infra/` y `apply` automatizado con aprobación.
-- El estado de `infra/bootstrap` es local; migrarlo al bucket.
-- Condición de WIF por `repository_id`/`repository_owner_id` (además del nombre) para que un
-  repo recreado con el mismo nombre no herede el acceso.
-- Escaneo de vulnerabilidades de la imagen (Trivy en CI o Artifact Analysis).
-- Ambiente de staging y GitHub Environments con aprobación para producción.
-- Observabilidad: uptime check y alerta de tasa de errores/latencia (SLO).
-- Rotación periódica de `API_KEY` y rate limiting (Cloud Armor/API Gateway).
-- Workflows reutilizables para que equipos Go/React se sumen sin copiar YAML (ver CRITERIO).
-- Acción automática sobre el presupuesto (Pub/Sub → deshabilitar facturación) si se quisiera
-  un tope duro.
+- Actualizar las actions automáticamente con Dependabot (hoy están fijadas por SHA y se
+  actualizan a mano).
+- `terraform plan` comentado en cada PR que toque `terraform/`; hoy la infraestructura la
+  aplica una persona desde su laptop.
+- Para tráfico de todo el país: instancias mínimas en horario laboral, un uptime check con
+  alerta y Cloud Armor con límite de peticiones.
+- Atar WIF también al ID del repositorio, para que un repo recreado con el mismo nombre no
+  herede el acceso.
+- Los primeros commits de la app (`test`, `small change`) entraron directo a `main` antes de
+  activar la protección y sin Conventional Commits. No reescribí el historial de `main`.
