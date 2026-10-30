@@ -57,8 +57,7 @@ def health() -> dict[str, str]:
 
 @app.get("/hello")
 def hello():
-  return {"hello":"back"}
-
+    return {"hello":"back"}
 
 @app.get("/tramites/{numero}", dependencies=[Depends(require_api_key)])
 def get_tramite(numero: Annotated[str, Path(pattern=NUMERO_PATTERN)]) -> Tramite:
