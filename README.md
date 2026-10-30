@@ -4,12 +4,11 @@ Plataforma para que el equipo de desarrollo despliegue solo, sin pedirle ayuda a
 La app de ejemplo es la consulta de estado de trámite del "Ministerio de Trámites
 Ciudadanos" (ficticio): el ciudadano manda su número y ve en qué va.
 
-**En una frase:** abres un PR, el pipeline lo revisa, lo fusionas y en un par de minutos
+**En una frase:** abres un PR, el pipeline lo revisa, haces merge y en un par de minutos
 está en producción en Cloud Run.
 
-> **Uso de IA.** Construí este repositorio con ayuda de **Claude (Anthropic), modelo Claude
-> Opus 5.5, desde Claude Code**: Terraform, workflows, Dockerfile y borradores de la
-> documentación. Lo revisé, lo apliqué en mi proyecto y lo puedo explicar y modificar. Los
+> **Uso de IA.** Construí este repositorio con ayuda de **Claude (Anthropic), Claude
+> Opus 5.5, desde Claude Code**: Terraform, workflows, Dockerfile. Lo revisé, lo apliqué en mi proyecto. Los
 > commits hechos con el asistente conservan su atribución (`Co-Authored-By: Claude ...`).
 
 ## Cómo funciona
@@ -124,13 +123,10 @@ precedido de bajar el state a local, porque el bucket del state también se borr
    *Descarté* ponerla en `terraform.tfvars` (quedaría en texto plano en el state) y cargarla a
    mano (un paso más y un segundo apply).
 4. **Dos pipelines simples; la seguridad la da la protección de `main`.** *Descarté* encadenar
-   deploy a ci con `workflow_run`: lo implementé y funcionaba, pero necesitaba guardas extra
-   (PRs de forks, qué commit desplegar, sin filtro por carpetas) y era difícil de explicar.
+   deploy a ci con `workflow_run`: para mantener la simplicidad.
 5. **El pipeline es dueño de la imagen; Terraform, de todo lo demás.** *Descarté* que el
    pipeline corra `terraform apply`: su cuenta necesitaría permisos casi de Owner.
-6. **Probé y retiré Binary Authorization y la detección de drift** (opciones 2 y 3). Ambas
-   funcionaron, pero eran opcionales y sumaban piezas (KMS, attestor, una segunda cuenta y un
-   cron) que no hacían falta para el objetivo. El historial de git las conserva.
+
 
 ## Costo
 
@@ -141,13 +137,10 @@ recientes) y hay una **alerta de presupuesto** de USD 10 que avisa por correo al
 
 ## Pendiente
 
-- Actualizar las actions automáticamente con Dependabot (hoy están fijadas por SHA y se
-  actualizan a mano).
+
 - `terraform plan` comentado en cada PR que toque `terraform/`; hoy la infraestructura la
-  aplica una persona desde su laptop.
+  aplica una persona desde su computadora.
 - Para tráfico de todo el país: instancias mínimas en horario laboral, un uptime check con
   alerta y Cloud Armor con límite de peticiones.
 - Atar WIF también al ID del repositorio, para que un repo recreado con el mismo nombre no
   herede el acceso.
-- Los primeros commits de la app (`test`, `small change`) entraron directo a `main` antes de
-  activar la protección y sin Conventional Commits. No reescribí el historial de `main`.

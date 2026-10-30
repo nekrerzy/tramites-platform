@@ -29,7 +29,7 @@ puse primero lo que deja a los equipos avanzar sin pasar por la célula.
 
 1. **Plantilla de pipeline** para Python, Go y React (pruebas, imagen versionada, escaneo y
    deploy). Es lo que piden los equipos y lo que más tickets elimina.
-2. **Alta de servicio en autoservicio:** un módulo de Terraform donde el equipo pone nombre y
+2. **Autoservicio:** un módulo de Terraform donde el equipo pone nombre y
    dueño, y obtiene repo de imágenes, cuenta de servicio, secreto y Cloud Run con permisos
    mínimos.
 3. **`terraform plan` en cada PR y detección de drift diaria:** nadie aplica a ciegas y un
@@ -45,11 +45,10 @@ puse primero lo que deja a los equipos avanzar sin pasar por la célula.
   *operación* (pedidos, incidentes, accesos manuales). Sin medirlo, es una opinión.
 - **Un límite claro.** Si la operación pasa del 50 % dos semanas seguidas, la semana siguiente
   se dedica a automatizar la causa más grande.
-- **Guardia rotativa.** Una o dos personas por semana atienden la operación; el resto queda
-  protegido para proyectos.
+
 - **Regla de tres.** Un pedido que llega tres veces se convierte en automatización o en
   autoservicio con documentación.
 - **Revisión semanal de 30 minutos:** porcentaje de ingeniería contra operación; los 3 pedidos
-  manuales más comunes; incidentes y sus acciones pendientes; métricas DORA (frecuencia de
+  manuales más comunes; incidentes y sus acciones pendientes; métricas  (frecuencia de
   despliegue, tiempo de entrega, tasa de fallos y tiempo de recuperación); y gasto contra
   presupuesto.
